@@ -16,6 +16,7 @@ from Compiler import comparison
 from Compiler import program
 from Compiler import instructions_base
 from Compiler import library, util
+from Compiler.types import sint
 
 # polynomials as enumerated on Hart's book
 ##
@@ -534,9 +535,14 @@ def abs_fx(x):
 # @param x: coefficient to be floored.
 #
 # @return floored sint value of x
-def floor_fx(x):
-    return load_sint(floatingpoint.Trunc(x.v, x.k, x.f, x.kappa), type(x))
+def floor_fx(x):    
+    def _neg_inp_floor(x):
+        offset_floor = load_sint(floatingpoint.Trunc(x.v, x.k, x.f, x.kappa), type(x))
+        offset = (1 << sint(x.k - x.f))
+        floor = offset_floor - offset
+        return floor
 
+    return util.if_else(x < 0, _neg_inp_floor(x), load_sint(floatingpoint.Trunc(x.v, x.k, x.f, x.kappa), type(x)))
 
 ### sqrt methods
 
