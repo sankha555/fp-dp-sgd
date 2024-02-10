@@ -1,0 +1,57 @@
+#import ml2 as ml
+import ml_sankha as ml
+#import ml_dp as ml
+import math
+import re
+import util
+import signal, sys
+
+def signal_hander(signum, frame):
+    print_ln("Saving parameters...")
+    sgd.save_params()
+    sys.exit(0)
+
+program.options_from_args()
+sfix.set_precision_from_args(program, adapt_ring=True)
+ml.use_mux = 'mux' in program.args
+MultiArray.disable_index_checks()
+
+batch_size = 1
+ml.set_batch_size(batch_size)
+N = 60000
+n_test = 10000
+n_examples = N
+n_features = 28 ** 2
+n_epochs = 10
+n_inner = 500
+
+ml.set_n_threads(4)
+
+activation = 'relu'
+
+layers = [
+    ml.Dense(n_examples, n_features, n_inner, activation=activation),
+    ml.Dense(N, n_inner, 10),   
+    ml.MultiOutput(n_examples, 10)
+]           
+
+program.disable_memory_warnings()
+
+Y = sint.Matrix(n_test, 10)
+X = sfix.Matrix(n_test, n_features)
+
+layers[-1].Y.input_from(0)
+layers[0].X.input_from(0)
+Y.input_from(0)
+X.input_from(0)
+
+layers[0].W.input_from(0)
+layers[1].W.input_from(0)
+
+sgd = ml.SGD(layers, False, 0.1, 0, 0)
+#sgd.noise_bag.input_from(0)
+
+sgd.train(batch_size, n_epochs)
+
+import signal
+#sgd.run(batch_size, n_epochs, (X, Y), True)
