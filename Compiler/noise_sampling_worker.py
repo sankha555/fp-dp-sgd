@@ -12,13 +12,8 @@ import time
 import math
 from Compiler.file_test import sample_and_write, write_to_transaction
 
-def sampler(n):
-    # print(f"Noise {n}")
-    get_noise_vector(16, n)
-
-
 try:
-    std = sys.argv[1]
+    std = int(sys.argv[1])
 except:
     std = 16
     
@@ -27,11 +22,36 @@ try:
 except:
     n_parties = 1
     
+try:
+    n_samples = int(sys.argv[3])
+except:
+    raise Exception("Number of samples should be specified")
+
+try:
+    double = int(sys.argv[4])
+except:
+    double = 0
+    
+if double and n_parties > 1:
+    raise Exception("Double noise can only be simulated for single party!")
+
+try:
+    numpy_double = int(sys.argv[5])
+except:
+    numpy_double = 0
+
+if numpy_double and (double == 0):
+    raise Exception("Numpy noise can be used only when double noise is being added by a single party!")
+
+try:
+    n_iterations = int(sys.argv[6])
+except:
+    raise Exception("Specify number of iterations!")
+    
 # party = int(sys.argv[2])
 client_id = 0
 
 client = Client(['localhost'] * n_parties, 15000, client_id)
-sampler = lambda n: get_noise_vector(16, n)
 
 class SamplingHandler:
     n_cores = 4
@@ -39,8 +59,13 @@ class SamplingHandler:
     proc_end_times = [0]*n_cores
     
     def __init__(self, total, party):
-        division = total // SamplingHandler.n_cores
-        ns_per_process = [division]*SamplingHandler.n_cores if total % SamplingHandler.n_cores == 0 else [division]*(SamplingHandler.n_cores - 1) + [total % SamplingHandler.n_cores]
+        print(f"Generating {total} samples for party {party}")
+        division = math.ceil(total / SamplingHandler.n_cores)
+        ns_per_process = [division]*SamplingHandler.n_cores        
+        
+        if total % SamplingHandler.n_cores > 0:
+            ns_per_process[-1] = total % division
+        
         self.party = party
                             
         procs = []
@@ -59,37 +84,54 @@ class SamplingHandler:
             # SamplingHandler.proc_end_times[i] = time.time()
             # print(f"Process {i} = {SamplingHandler.proc_end_times[i] - SamplingHandler.proc_start_times[i]} s")
             
+    def sampling_process(self, n, id):
+        res = get_noise_vector(std, n)
+        with open(f"./NoiseSamples/party{self.party}_p{id}.txt", "w+") as f:
+            f.writelines(str(res))
+            
     def parse_res(self):
         res = []
         for i in range(SamplingHandler.n_cores):
-            with open(f"./party{self.party}_p{i}.txt", "r") as f:
+            with open(f"./NoiseSamples/party{self.party}_p{i}.txt", "r") as f:
                 res_part = eval(f.readline())
                 res.extend(res_part)    
             
         return res
-            
-    def sampling_process(self, n, id):
-        res = get_noise_vector(16, n)
-        with open(f"./party{self.party}_p{id}.txt", "w") as f:
-            f.writelines(str(res))
 
-tm = time.time()
 
 def write_to_party(party):
+    tm = time.time()
     os = octetStream()
-    sp = SamplingHandler(400000, party)
-    res = sp.parse_res()   
+    
+    res = []
+    if numpy_double:
+        res1 = np.random.normal(0, std, n_samples)
+        res2 = np.random.normal(0, std, n_samples)
+        res = (res1 + res2).tolist()
+    else:
+        sp = SamplingHandler(n_samples, party)
+        res = sp.parse_res()  
+        
+        if double:
+            sp1 = SamplingHandler(n_samples, party)
+            res1 = sp1.parse_res()
+            assert len(res) == len(res1)
+            res = [res[i] + res1[i] for i in range(len(res))]
+    
+    print(len(res))
     write_to_transaction(res, party)
     
     time.sleep(2)
     
     SIG = party+1
-    print(SIG)
+    secs = time.time() - tm 
+    print(f"Party {party}: {len(res)} samples in {secs:.2f} s")
+    
     client.domain(SIG).pack(os)
     os.Send(client.sockets[party])
 
 i = 0
-while i < 1000:
+while i < n_iterations:        
     for party in range(n_parties):
         write_to_party(party)
     i += 1
