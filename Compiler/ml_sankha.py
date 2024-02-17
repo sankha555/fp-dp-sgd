@@ -1117,6 +1117,8 @@ class MultiOutput(Layer):
         return _()
 
 class SGD(Optimizer):
+    dataset = ""
+    
     def __init__(self, layers: List[Layer], input_params = False, lr: float = 0.1, clip=0, sigma=0, double_noise=False, min_lr: float = 0.1, lr_red_max_epoch: int = 10):
         self.layers = layers
         self.learnable_layers = self.layers[:-1]
@@ -1124,7 +1126,7 @@ class SGD(Optimizer):
         self.thetas = []
         self.per_sample_norms = []
         self.delta_thetas = []
-        self.lr = MemValue(cfix(lr)) 
+        self.lr = lr 
         self.epoch_num = MemValue(0)
         self.X_by_label = None
         self.shuffle = False
@@ -1184,7 +1186,7 @@ class SGD(Optimizer):
                 print_ln("Setting up connection %s", get_player_id()._v.reveal())
                 global socket
                 listen_for_clients(15000)
-                socket = accept_client_connection(15000)    
+                socket = accept_client_connection(15000)   
                                             
     def batch_for(self, layer, batch):
         if layer in (self.layers[0], self.layers[-1]):
@@ -1270,7 +1272,7 @@ class SGD(Optimizer):
                 delta_theta.assign_vector(new, base)
                 theta.assign_vector(theta.get_vector(base, size) + nabla.get_vector(base, size)*sfix(-self.update_factor), base)
                 
-            if 1:
+            if 0:
                 if type(nabla) == Matrix:
                     print_ln("NABLA_W_SCALED = %s", (nabla[0].get_vector(0, min(nabla[0].total_size(), 1000))*sfix(-self.update_factor)).reveal())
                 else:
@@ -1288,6 +1290,23 @@ class SGD(Optimizer):
             layer: Dense 
             layer.W.write_to_file()
             layer.b.write_to_file()
+            
+    def print_training_config(self, batch_size, n_epochs):
+        print_both("***********************************************************")
+        print_both(f"Training {SGD.dataset}")
+        print_both("Model: ", end="")
+        for layer in self.layers:
+            print_both(layer.__repr__(), end=" => ")
+        print_both(f"\nTrain Examples: {self.layers[0].N}")
+        print_both(f"Batch Size: {batch_size}")
+        print_both(f"Num Epochs: {n_epochs}")
+        print_both(f"Learning Rate: {self.lr} to {self.min_lr} over {self.lr_red_max_epoch} epochs")
+        if self.clip:
+            print_both(f"Clipping Factor: {self.clip}")
+        if self.noisy:
+            print_both(f"Sigma: {self.noisy}")
+
+        print_both("***********************************************************")
     
     def reveal_correctness(self, data, truth, batch_size=128, running=False):
         """ Test correctness by revealing results.
@@ -1344,13 +1363,14 @@ class SGD(Optimizer):
         n_test = len(test_Y)
         n_correct, loss = self.reveal_correctness(test_X, test_Y, batch_size)
         print_ln('TEST LOSS = %s', loss)        
-        print_ln('TEST ACC = %s % (%s/%s)',(n_correct.reveal() / n_test)*100, n_correct.reveal(), n_test)        
+        print_ln('TEST ACC = %s % (%s/%s)', ((self.n_correct/n_test)*100).reveal(), n_correct.reveal(), n_test)        
 
     def train(self, batch_size, n_epochs, test_loader = None):
         self.print_stats = True
         
         assert batch_size > 0
             
+        self.lr = MemValue(cfix(self.lr))
         self.n_correct = MemValue(0)
         self.counter = 0
         @for_range_opt(n_epochs)
@@ -1369,7 +1389,7 @@ class SGD(Optimizer):
             indices_by_label.append(indices)
             
             indices.assign(regint.inc(len(X)))
-            # indices.shuffle()
+            indices.shuffle()
             
             self.n_correct.write(0)
             train_loss = MemValue(sfix(0))
@@ -1414,14 +1434,15 @@ class SGD(Optimizer):
             @if_(i < self.lr_red_max_epoch)
             def _():
                 self.lr += self.lr_step
-                print_ln("Reducing learning rate to %s", self.lr.reveal())
-                
+                print_ln("Reducing learning rate to %s", self.lr.reveal())                
             
     def run(self, batch_size, n_epochs, test_loader, per_epoch_testing = False):
         test_X, test_Y = test_loader
         
-        ## TRAIN FOR EPOCHS ##
+        ## TRAIN FOR `n_epochs` EPOCHS ##
         test_loader = (test_X, test_Y) if per_epoch_testing else None
+        
+        self.print_training_config(batch_size, n_epochs)
         self.train(batch_size, n_epochs, test_loader)
         
         if not per_epoch_testing:
